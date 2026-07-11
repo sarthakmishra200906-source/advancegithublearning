@@ -37,6 +37,19 @@ const dashboardNotes = [
   },
 ];
 
+const dashboardJokeApiUrl =
+  window.DASHBOARD_JOKE_API_URL ||
+  "https://official-joke-api.appspot.com/random_joke";
+
+const fallbackJokes = [
+  "Why do developers hate nature? It has too many bugs.",
+  "A SQL query walks into a bar and asks: can I join you?",
+  "Why did the JavaScript developer go broke? Because he used up all his cache.",
+  "I told my computer I needed a break, and it said: no problem, I will go to sleep.",
+];
+
+let activeJokeRequestId = 0;
+
 function getSessionUser() {
   return JSON.parse(localStorage.getItem(storageKeys.session) || "null");
 }
@@ -91,6 +104,125 @@ function getDashboardStats(user) {
     { label: "Streak", value: 12 + (nameSeed % 7) },
     { label: "Tasks", value: 24 + (nameSeed % 11) },
   ];
+}
+
+function getFallbackJoke() {
+  return fallbackJokes[Math.floor(Math.random() * fallbackJokes.length)];
+}
+
+function normalizeJokePayload(payload) {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  if (payload.setup && payload.punchline) {
+    return {
+      setup: payload.setup,
+      punchline: payload.punchline,
+      source: payload.source || "API",
+    };
+  }
+
+  if (payload.joke) {
+    return {
+      setup: payload.joke,
+      punchline: payload.category || "",
+      source: payload.source || "API",
+    };
+  }
+
+  if (payload.value) {
+    return {
+      setup: payload.value,
+      punchline: "",
+      source: payload.source || "API",
+    };
+  }
+
+  if (payload.text) {
+    return {
+      setup: payload.text,
+      punchline: "",
+      source: payload.source || "API",
+    };
+  }
+
+  return null;
+}
+
+async function fetchDashboardJoke() {
+  const response = await fetch(dashboardJokeApiUrl, {
+    cache: "no-store",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`);
+  }
+
+  const payload = await response.json();
+  const joke = normalizeJokePayload(payload);
+
+  if (joke) {
+    return joke;
+  }
+
+  throw new Error("Unsupported joke payload");
+}
+
+function jokeMarkup(joke, isFallback = false) {
+  const sourceLabel = isFallback ? "Local fallback" : joke.source || "API";
+
+  return `
+    <article class="dashboard-card joke-panel">
+      <div class="joke-header">
+        <div>
+          <p class="eyebrow">Daily joke</p>
+          <h3>Fresh content on every dashboard load</h3>
+        </div>
+        <button class="secondary" type="button" data-action="refresh-joke">Refresh joke</button>
+      </div>
+      <p class="joke-copy">${escapeHtml(joke.setup)}</p>
+      ${joke.punchline ? `<p class="joke-punchline">${escapeHtml(joke.punchline)}</p>` : ""}
+      <p class="joke-meta">Source: ${escapeHtml(sourceLabel)}</p>
+    </article>
+  `;
+}
+
+function setDashboardJokeState(html) {
+  const jokeSlot = document.querySelector("[data-joke-slot]");
+  if (jokeSlot) {
+    jokeSlot.innerHTML = html;
+  }
+}
+
+async function loadDashboardJoke() {
+  const requestId = ++activeJokeRequestId;
+  setDashboardJokeState(`
+    <article class="dashboard-card joke-panel">
+      <p class="eyebrow">Daily joke</p>
+      <h3>Loading a fresh joke...</h3>
+      <p class="muted">Fetching from your API endpoint.</p>
+      <p class="joke-meta">Please wait.</p>
+    </article>
+  `);
+
+  try {
+    const joke = await fetchDashboardJoke();
+    if (requestId !== activeJokeRequestId) {
+      return;
+    }
+
+    setDashboardJokeState(jokeMarkup(joke));
+  } catch {
+    if (requestId !== activeJokeRequestId) {
+      return;
+    }
+
+    setDashboardJokeState(jokeMarkup({ setup: getFallbackJoke(), punchline: "" }, true));
+  }
 }
 
 function homeView() {
@@ -251,7 +383,7 @@ function dashboardView(message = "") {
         <p>${escapeHtml(user.bio || `Your ${user.role.toLowerCase()} profile is loaded and ready for the next step.`)}</p>
       </div>
 
-      <div class="dashboard-layout" style="margin-top: 18px;">
+      <div class="dashboard-layout dashboard-layout--active" style="margin-top: 18px;">
         <article class="dashboard-card">
           <h3>Profile summary</h3>
           <p class="muted">Role: ${escapeHtml(user.role)}</p>
@@ -300,6 +432,14 @@ function dashboardView(message = "") {
           </div>
         </aside>
       </div>
+      <div data-joke-slot class="dashboard-joke-slot" style="margin-top: 18px;">
+        <article class="dashboard-card joke-panel">
+          <p class="eyebrow">Daily joke</p>
+          <h3>Loading a fresh joke...</h3>
+          <p class="muted">Fetching from your API endpoint.</p>
+          <p class="joke-meta">Please wait.</p>
+        </article>
+      </div>
       ${message ? `<p class="message ${message.type || ""}" style="margin-top: 18px;">${escapeHtml(message.text)}</p>` : ""}
     </section>
   `;
@@ -327,6 +467,11 @@ function render(route = currentRoute(), message = "") {
 
   app.innerHTML = html;
   footerStatus.textContent = status;
+
+  const hasDashboardUser = route === "dashboard" && (getSessionUser() || getRegisteredUser());
+  if (hasDashboardUser) {
+    loadDashboardJoke();
+  }
 }
 
 document.addEventListener("click", (event) => {
@@ -339,6 +484,12 @@ document.addEventListener("click", (event) => {
   const logoutButton = event.target.closest("[data-action='logout']");
   if (logoutButton) {
     logout();
+    return;
+  }
+
+  const refreshJokeButton = event.target.closest("[data-action='refresh-joke']");
+  if (refreshJokeButton) {
+    loadDashboardJoke();
   }
 });
 
@@ -350,7 +501,6 @@ document.addEventListener("submit", (event) => {
 
   event.preventDefault();
   const data = new FormData(form);
-  const route = currentRoute();
 
   if (form.dataset.form === "register") {
     const user = {
