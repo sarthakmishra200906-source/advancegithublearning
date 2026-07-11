@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 520" role="img" aria-labelledby="title desc">
+  <title id="title">Colorful abstract dashboard illustration</title>
+  <desc id="desc">A playful abstract artwork with circles, waves, and a smiling face.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#fff8ef"/>
+      <stop offset="100%" stop-color="#fff2db"/>
+    </linearGradient>
+    <linearGradient id="sun" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#ff8a5b"/>
+      <stop offset="100%" stop-color="#ffcf6e"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#67c8ff"/>
+      <stop offset="100%" stop-color="#8c7cff"/>
+    </linearGradient>
+  </defs>
+  <rect width="760" height="520" rx="42" fill="url(#bg)"/>
+  <circle cx="620" cy="110" r="74" fill="url(#sun)" opacity="0.95"/>
+  <circle cx="120" cy="118" r="28" fill="#ffb47e" opacity="0.8"/>
+  <circle cx="164" cy="102" r="10" fill="#67c8ff"/>
+  <circle cx="672" cy="208" r="16" fill="#67c8ff" opacity="0.75"/>
+  <circle cx="684" cy="232" r="8" fill="#8c7cff"/>
+  <path d="M40 358C124 292 184 280 258 306c82 28 114 74 182 82 93 10 150-46 240-70" fill="none" stroke="url(#wave)" stroke-width="26" stroke-linecap="round" opacity="0.35"/>
+  <path d="M82 388C180 316 230 324 300 346c61 18 118 72 210 74 73 2 144-30 188-54" fill="none" stroke="#ff8a5b" stroke-width="16" stroke-linecap="round" opacity="0.4"/>
+  <rect x="186" y="150" width="236" height="170" rx="34" fill="#fff" stroke="rgba(31,36,48,0.08)" stroke-width="4"/>
+  <rect x="218" y="184" width="168" height="18" rx="9" fill="#d9f4ff"/>
+  <rect x="218" y="216" width="198" height="18" rx="9" fill="#ffe1c8"/>
+  <rect x="218" y="248" width="148" height="18" rx="9" fill="#ecdefe"/>
+  <circle cx="284" cy="258" r="42" fill="#fff5dd"/>
+  <circle cx="268" cy="250" r="6" fill="#1f2430"/>
+  <circle cx="300" cy="250" r="6" fill="#1f2430"/>
+  <path d="M272 269c9 12 31 12 41 0" fill="none" stroke="#1f2430" stroke-width="5" stroke-linecap="round"/>
+  <path d="M156 408c33-24 68-26 106-10 29 12 50 12 79 0 38-16 74-14 110 4 27 13 50 19 87 18 41-1 74-10 107-29" fill="none" stroke="url(#sun)" stroke-width="20" stroke-linecap="round" opacity="0.45"/>
+  <circle cx="110" cy="426" r="18" fill="#8c7cff" opacity="0.8"/>
+  <circle cx="654" cy="392" r="22" fill="#67c8ff" opacity="0.7"/>
+</svg>

@@ -37,9 +37,15 @@ const dashboardNotes = [
   },
 ];
 
-const dashboardJokeApiUrl =
-  window.DASHBOARD_JOKE_API_URL ||
-  "https://official-joke-api.appspot.com/random_joke";
+const apiNinjasConfig = {
+  apiKey: window.API_NINJAS_API_KEY || "",
+  baseUrl: window.API_NINJAS_BASE_URL || "https://api.api-ninjas.com/v1",
+};
+
+const apiNinjasEndpoints = {
+  jokeOfTheDay: `${apiNinjasConfig.baseUrl}/jokeoftheday`,
+  randomJokes: `${apiNinjasConfig.baseUrl}/jokes?limit=2`,
+};
 
 const fallbackJokes = [
   "Why do developers hate nature? It has too many bugs.",
@@ -49,6 +55,10 @@ const fallbackJokes = [
 ];
 
 let activeJokeRequestId = 0;
+let dashboardJokeState = {
+  today: null,
+  moreJokes: [],
+};
 
 function getSessionUser() {
   return JSON.parse(localStorage.getItem(storageKeys.session) || "null");
@@ -150,12 +160,97 @@ function normalizeJokePayload(payload) {
   return null;
 }
 
-async function fetchDashboardJoke() {
-  const response = await fetch(dashboardJokeApiUrl, {
+function normalizeJokeCollection(payload) {
+  if (Array.isArray(payload)) {
+    return payload.map(normalizeJokePayload).filter(Boolean);
+  }
+
+  const normalized = normalizeJokePayload(payload);
+  return normalized ? [normalized] : [];
+}
+
+function buildApiHeaders() {
+  const headers = {
+    Accept: "application/json",
+  };
+
+  if (apiNinjasConfig.apiKey) {
+    headers["X-Api-Key"] = apiNinjasConfig.apiKey;
+  }
+
+  return headers;
+}
+
+async function fetchApiNinjasJson(url) {
+  const response = await fetch(url, {
     cache: "no-store",
-    headers: {
-      Accept: "application/json",
-    },
+    headers: buildApiHeaders(),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`);
+  }
+
+  return response.json();
+}
+
+async function fetchTodayJoke() {
+  if (!apiNinjasConfig.apiKey) {
+    return {
+      setup: getFallbackJoke(),
+      punchline: "",
+      source: "Local fallback",
+    };
+  }
+
+  const payload = await fetchApiNinjasJson(apiNinjasEndpoints.jokeOfTheDay);
+  const normalized = normalizeJokeCollection(payload);
+
+  if (normalized.length > 0) {
+    return normalized[0];
+  }
+
+  throw new Error("Unsupported today joke payload");
+}
+
+async function fetchRandomJokes() {
+  if (!apiNinjasConfig.apiKey) {
+    return [
+      {
+        setup: getFallbackJoke(),
+        punchline: "",
+        source: "Local fallback",
+      },
+      {
+        setup: getFallbackJoke(),
+        punchline: "",
+        source: "Local fallback",
+      },
+    ];
+  }
+
+  const payload = await fetchApiNinjasJson(apiNinjasEndpoints.randomJokes);
+  const normalized = normalizeJokeCollection(payload);
+
+  if (normalized.length > 0) {
+    return normalized.slice(0, 2);
+  }
+
+  throw new Error("Unsupported random joke payload");
+}
+
+function formatJokeLine(joke) {
+  if (!joke) {
+    return "";
+  }
+
+  return joke.punchline ? `${joke.setup} ${joke.punchline}` : joke.setup;
+}
+
+async function fetchDashboardJoke() {
+  const response = await fetch(apiNinjasEndpoints.jokeOfTheDay, {
+    cache: "no-store",
+    headers: buildApiHeaders(),
   });
 
   if (!response.ok) {
@@ -180,9 +275,8 @@ function jokeMarkup(joke, isFallback = false) {
       <div class="joke-header">
         <div>
           <p class="eyebrow">Daily joke</p>
-          <h3>Fresh content on every dashboard load</h3>
+          <h3>Today's joke, shown first</h3>
         </div>
-        <button class="secondary" type="button" data-action="refresh-joke">Refresh joke</button>
       </div>
       <p class="joke-copy">${escapeHtml(joke.setup)}</p>
       ${joke.punchline ? `<p class="joke-punchline">${escapeHtml(joke.punchline)}</p>` : ""}
@@ -191,11 +285,32 @@ function jokeMarkup(joke, isFallback = false) {
   `;
 }
 
-function setDashboardJokeState(html) {
-  const jokeSlot = document.querySelector("[data-joke-slot]");
+function setDashboardJokeState(html, selector = "[data-joke-slot]") {
+  const jokeSlot = document.querySelector(selector);
   if (jokeSlot) {
     jokeSlot.innerHTML = html;
   }
+}
+
+function renderJokeList(jokes) {
+  if (!jokes || jokes.length === 0) {
+    return `
+      <div class="jokes-feed-empty">
+        Press the button to load two extra jokes from the API.
+      </div>
+    `;
+  }
+
+  return jokes
+    .map(
+      (joke) => `
+        <article class="joke-item">
+          <span class="joke-chip">API Ninjas</span>
+          <p>${escapeHtml(formatJokeLine(joke))}</p>
+        </article>
+      `,
+    )
+    .join("");
 }
 
 async function loadDashboardJoke() {
@@ -203,25 +318,64 @@ async function loadDashboardJoke() {
   setDashboardJokeState(`
     <article class="dashboard-card joke-panel">
       <p class="eyebrow">Daily joke</p>
-      <h3>Loading a fresh joke...</h3>
-      <p class="muted">Fetching from your API endpoint.</p>
+      <h3>Loading today's joke...</h3>
+      <p class="muted">Fetching from the API Ninjas joke of the day endpoint.</p>
       <p class="joke-meta">Please wait.</p>
     </article>
   `);
 
   try {
-    const joke = await fetchDashboardJoke();
+    const joke = await fetchTodayJoke();
     if (requestId !== activeJokeRequestId) {
       return;
     }
 
+    dashboardJokeState.today = joke;
     setDashboardJokeState(jokeMarkup(joke));
   } catch {
     if (requestId !== activeJokeRequestId) {
       return;
     }
 
-    setDashboardJokeState(jokeMarkup({ setup: getFallbackJoke(), punchline: "" }, true));
+    dashboardJokeState.today = { setup: getFallbackJoke(), punchline: "" };
+    setDashboardJokeState(jokeMarkup(dashboardJokeState.today, true));
+  }
+}
+
+async function loadMoreDashboardJokes() {
+  const requestId = ++activeJokeRequestId;
+  const jokesFeed = document.querySelector("[data-jokes-feed]");
+
+  if (jokesFeed) {
+    jokesFeed.classList.add("is-loading");
+  }
+
+  try {
+    const jokes = await fetchRandomJokes();
+    if (requestId !== activeJokeRequestId) {
+      return;
+    }
+
+    dashboardJokeState.moreJokes = [...dashboardJokeState.moreJokes, ...jokes];
+    if (jokesFeed) {
+      jokesFeed.classList.remove("is-loading");
+      jokesFeed.innerHTML = renderJokeList(dashboardJokeState.moreJokes);
+    }
+  } catch {
+    if (requestId !== activeJokeRequestId) {
+      return;
+    }
+
+    dashboardJokeState.moreJokes = [
+      ...dashboardJokeState.moreJokes,
+      { setup: getFallbackJoke(), punchline: "" },
+      { setup: getFallbackJoke(), punchline: "" },
+    ];
+
+    if (jokesFeed) {
+      jokesFeed.classList.remove("is-loading");
+      jokesFeed.innerHTML = renderJokeList(dashboardJokeState.moreJokes);
+    }
   }
 }
 
@@ -245,21 +399,24 @@ function homeView() {
   return `
     <section class="panel hero-grid">
       <div class="hero-copy">
-        <p class="eyebrow">Single page experience</p>
-        <h1>One layout. Three account flows. All rendered in JavaScript.</h1>
-        <p>${escapeHtml(greeting)} This site keeps the header and footer fixed while the main area swaps between home, login, register, and dashboard views.</p>
+        <p class="eyebrow">Bright, playful workspace</p>
+        <h1>One layout, colorful motion, and a dashboard that starts with today’s joke.</h1>
+        <p>${escapeHtml(greeting)} The page keeps the header and footer fixed while JavaScript swaps between home, login, register, and dashboard views.</p>
         <div class="hero-actions">
           <button class="primary" data-action="goto" data-target="register">Create account</button>
           <button class="secondary" data-action="goto" data-target="dashboard">Open dashboard</button>
         </div>
         <ul class="hero-list">
           <li>Separate HTML, CSS, and JavaScript files</li>
-          <li>Responsive layout for desktop and mobile</li>
-          <li>Dynamic content with reusable render functions</li>
+          <li>Responsive layout for desktop, tablet, and mobile</li>
+          <li>Dynamic joke fetching with API Ninjas</li>
         </ul>
       </div>
       <aside class="hero-visual">
-        <div class="dashboard-banner">
+        <div class="hero-art-card">
+          <img class="hero-art" src="hero-art.svg" alt="Abstract colorful illustration with playful shapes" />
+        </div>
+        <div class="dashboard-banner light-banner">
           <p class="eyebrow">Live status</p>
           <h2>${escapeHtml(guest ? guest.name : "Guest visitor")}</h2>
           <p>${escapeHtml(guest ? "Your session is active and ready for dashboard actions." : "Sign up or log in to unlock your dashboard.")}</p>
@@ -377,9 +534,9 @@ function dashboardView(message = "") {
 
   return `
     <section class="panel">
-      <div class="dashboard-banner">
+      <div class="dashboard-banner light-banner">
         <p class="eyebrow">Dashboard</p>
-        <h2>Hi ${escapeHtml(user.name)}, your workspace is active.</h2>
+        <h2>Hi ${escapeHtml(user.name)}, your colorful workspace is active.</h2>
         <p>${escapeHtml(user.bio || `Your ${user.role.toLowerCase()} profile is loaded and ready for the next step.`)}</p>
       </div>
 
@@ -435,10 +592,22 @@ function dashboardView(message = "") {
       <div data-joke-slot class="dashboard-joke-slot" style="margin-top: 18px;">
         <article class="dashboard-card joke-panel">
           <p class="eyebrow">Daily joke</p>
-          <h3>Loading a fresh joke...</h3>
-          <p class="muted">Fetching from your API endpoint.</p>
+          <h3>Loading today's joke...</h3>
+          <p class="muted">Fetching from the API Ninjas joke of the day endpoint.</p>
           <p class="joke-meta">Please wait.</p>
         </article>
+      </div>
+      <div class="dashboard-more-jokes" style="margin-top: 18px;">
+        <div class="jokes-headline">
+          <div>
+            <p class="eyebrow">More jokes</p>
+            <h3>Press the button to get two more jokes each time.</h3>
+          </div>
+          <button class="secondary" type="button" data-action="refresh-joke">Get 2 more jokes</button>
+        </div>
+        <div data-jokes-feed class="jokes-feed">
+          <div class="jokes-feed-empty">Two random jokes will appear here after the first click.</div>
+        </div>
       </div>
       ${message ? `<p class="message ${message.type || ""}" style="margin-top: 18px;">${escapeHtml(message.text)}</p>` : ""}
     </section>
@@ -470,6 +639,7 @@ function render(route = currentRoute(), message = "") {
 
   const hasDashboardUser = route === "dashboard" && (getSessionUser() || getRegisteredUser());
   if (hasDashboardUser) {
+    dashboardJokeState.moreJokes = [];
     loadDashboardJoke();
   }
 }
@@ -489,7 +659,7 @@ document.addEventListener("click", (event) => {
 
   const refreshJokeButton = event.target.closest("[data-action='refresh-joke']");
   if (refreshJokeButton) {
-    loadDashboardJoke();
+    loadMoreDashboardJokes();
   }
 });
 
@@ -567,4 +737,7 @@ window.addEventListener("load", () => {
   }
 
   render(route);
+  if (route === "dashboard") {
+    loadDashboardJoke();
+  }
 });
